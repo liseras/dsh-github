@@ -1,0 +1,11 @@
+# dsh-github：注册 Host 行。Client 半由 package.json 的 dsh.client 声明。
+- insert:
+    - id: dsh-github
+      name: 'dsh-github'
+      config:
+        # 把仓库状态注入模型上下文。只在会话工作区确实是 git 仓库时生效。
+        injectContext: true
+        injectMaxFiles: 12
+        # 允许模型直接提交/推送。用户选择开启：写操作仍会在面板里弹确认，
+        # 但模型经工具发起的写操作不经过确认，因此这里是唯一的授权点。
+        allowWriteOperations: true

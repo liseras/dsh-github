@@ -1,0 +1,13 @@
+# 依赖与构建产物
+node_modules/
+*.log
+
+# 编辑器与系统文件
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# 本机临时产物
+/tmp/
+*.local

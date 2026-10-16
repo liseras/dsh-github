@@ -1,0 +1,4 @@
+{
+  "title": "GitHub Git integration",
+  "description": "Inspect git status and history, compare changes, manage branches, and commit in the workspace; sync with a remote using a GitHub token."
+}

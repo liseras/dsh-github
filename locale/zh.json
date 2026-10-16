@@ -1,0 +1,4 @@
+{
+  "title": "GitHub Git 集成",
+  "description": "在工作区里查看 git 状态与历史、比较改动、管理分支并提交；支持用 GitHub 令牌与远端同步。"
+}

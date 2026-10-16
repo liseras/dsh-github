@@ -1,0 +1,35 @@
+{
+  "name": "dsh-github",
+  "version": "0.1.0",
+  "private": true,
+  "description": "当前工作区的 Git 集成：状态、历史、差异、分支、提交与远端同步，并为模型提供 git 工具与条件上下文。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "icon": "./icon.svg",
+  "meta": {
+    "title": "GitHub Git 集成",
+    "description": "在工作区里查看 git 状态与历史、比较改动、管理分支并提交；支持用 GitHub 令牌与远端同步。"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "license": "MIT"
+}
