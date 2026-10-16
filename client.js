@@ -50,6 +50,17 @@ window.__ModuleLoader__.load({
       'remotes.none': '没有配置远端',
       'action.stageAll': '全部暂存',
       'action.refresh': '刷新',
+      'action.back': '返回',
+      'repos.filter': '筛选仓库',
+      'repos.local': '打开',
+      'repos.clone': '克隆',
+      'repos.cloning': '克隆中…',
+      'repos.private': '私有',
+      'repos.sectionLocal': '本地仓库',
+      'repos.sectionRemote': 'GitHub 上（未克隆）',
+      'repos.empty': '没有找到仓库。',
+      'repos.emptyHint': '确认已在设置里配置 GitHub 令牌，或把仓库放到工作区目录下。',
+      'repos.remoteError': 'GitHub 列表获取失败',
       'action.commit': '提交',
       'commit.placeholder': '提交信息',
       'commit.empty': '请先填写提交信息',
@@ -114,6 +125,17 @@ window.__ModuleLoader__.load({
       'remotes.none': 'No remotes',
       'action.stageAll': 'Stage all',
       'action.refresh': 'Refresh',
+      'action.back': 'Back',
+      'repos.filter': 'Filter repositories',
+      'repos.local': 'Open',
+      'repos.clone': 'Clone',
+      'repos.cloning': 'Cloning…',
+      'repos.private': 'Private',
+      'repos.sectionLocal': 'Local repositories',
+      'repos.sectionRemote': 'On GitHub (not cloned)',
+      'repos.empty': 'No repositories found.',
+      'repos.emptyHint': 'Check that a GitHub token is configured, or place a repository under the workspace directory.',
+      'repos.remoteError': 'Could not load the GitHub list',
       'action.commit': 'Commit',
       'commit.placeholder': 'Commit message',
       'commit.empty': 'Enter a commit message first',
@@ -232,6 +254,25 @@ window.__ModuleLoader__.load({
 .dshgh-modal-card h3 { margin:0 0 8px; font-size:14px; font-weight:600; }
 .dshgh-modal-card p { margin:0 0 16px; color:var(--dsw-alias-label-secondary); font-size:12px; line-height:1.55; white-space:pre-wrap; }
 .dshgh-modal-actions { display:flex; gap:8px; justify-content:flex-end; }
+
+/* ---------- 仓库列表（面板首页） ---------- */
+/* 每个仓库是一张可点的卡片：名字 + 描述 + 元信息，整行可点。
+   用卡片而不是表格行，因为手机上整块区域更容易点中。 */
+.dshgh-repo { display:flex; align-items:center; gap:10px; border:1px solid var(--dsw-alias-border-l1);
+              border-radius:var(--dsw-radius-md,10px); background:var(--dsw-alias-bg-layer-1);
+              margin:0 0 8px; overflow:hidden; }
+.dshgh-repo:hover { border-color:var(--dsw-alias-border-l2); }
+.dshgh-repo-main { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px;
+                   background:none; border:none; color:inherit; font:inherit; text-align:left;
+                   padding:11px 13px; cursor:pointer; }
+.dshgh-repo-main:disabled { opacity:.55; cursor:default; }
+.dshgh-repo-name { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; }
+.dshgh-repo-desc { color:var(--dsw-alias-label-secondary); font-size:12px; line-height:1.45;
+                   overflow:hidden; text-overflow:ellipsis; display:-webkit-box;
+                   -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.dshgh-repo-meta { display:flex; align-items:center; gap:10px; color:var(--dsw-alias-label-secondary);
+                   font-size:11px; margin-top:2px; }
+.dshgh-back { padding:6px 10px; font-size:12px; }
 `;
 
     // ------------------------------------------------------------ 工具
@@ -337,13 +378,152 @@ window.__ModuleLoader__.load({
     }
 
     // ------------------------------------------------------------ 主面板
+
+    /**
+     * 面板首页：列出用户有的仓库，点一个进去。
+     *
+     * 这是对最初设计的修正。原设计一打开就要用户填**服务器文件系统路径**，
+     * 既反直觉（绑定了 GitHub 却要记 /root/... ），也要求用户了解容器结构。
+     * 改成列出他实际拥有的东西：本地仓库 + GitHub 仓库。
+     *
+     * 两类条目的动作不同：
+     *   - 已在本地 → 直接打开
+     *   - 只在 GitHub → 提供克隆，克隆完自动打开
+     */
     function GithubPanel(props) {
+      const t = props.t;
+      const store = props.store;
+      const state = useStore(store);
+
+      const [busy, setBusy] = React.useState(false);
+      const [error, setError] = React.useState('');
+      const [cloning, setCloning] = React.useState('');
+      const [filter, setFilter] = React.useState('');
+      // 当前打开的仓库根；null 表示停在列表页。
+      const [openRoot, setOpenRoot] = React.useState(null);
+
+      const load = React.useCallback(async () => {
+        setBusy(true);
+        setError('');
+        try {
+          const value = await call('/repos');
+          store.set({ repos: value });
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setBusy(false);
+        }
+      }, [store]);
+
+      React.useEffect(() => { if (store.get().repos === null) load(); }, [load, store]);
+
+      const openLocal = React.useCallback((path) => {
+        setOpenRoot(path);
+      }, []);
+
+      const clone = React.useCallback(async (item) => {
+        setCloning(item.id);
+        setError('');
+        try {
+          const result = await call('/clone', {
+            method: 'POST',
+            body: { cloneUrl: item.cloneUrl, name: item.name },
+          });
+          // 克隆完刷新列表并直接打开
+          await load();
+          setOpenRoot(result.path);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setCloning('');
+        }
+      }, [load]);
+
+      // 打开详情时，把 root 交给 RepoDetail，并给它一个返回入口。
+      if (openRoot !== null) {
+        return h(RepoDetail, {
+          ctx: props.ctx, store, t, root: openRoot,
+          onBack: () => setOpenRoot(null),
+        });
+      }
+
+      const data = state.repos;
+      const items = data?.items ?? [];
+      const needle = filter.trim().toLowerCase();
+      const shown = needle === ''
+        ? items
+        : items.filter((i) => i.id.toLowerCase().includes(needle));
+
+      const local = shown.filter((i) => i.localPath);
+      const remoteOnly = shown.filter((i) => !i.localPath);
+
+      const row = (item, kind) => h('div', { className: 'dshgh-repo', key: item.id },
+        h('button', {
+          type: 'button',
+          className: 'dshgh-repo-main',
+          disabled: busy || cloning !== '',
+          onClick: () => (kind === 'local' ? openLocal(item.localPath) : clone(item)),
+        },
+          h('span', { className: 'dshgh-repo-name' },
+            item.name,
+            item.private ? h('span', { className: 'dshgh-badge' }, t('repos.private')) : null),
+          item.description ? h('span', { className: 'dshgh-repo-desc' }, item.description) : null,
+          h('span', { className: 'dshgh-repo-meta' },
+            kind === 'local' ? t('repos.local') : t('repos.clone'),
+            item.language ? h('span', { className: 'dshgh-mono' }, item.language) : null,
+            item.updatedAt ? h('span', { className: 'dshgh-mono' }, item.updatedAt.slice(0, 10)) : null)),
+        cloning === item.id ? h('span', { className: 'dshgh-mono' }, t('repos.cloning')) : null);
+
+      return h('div', { className: 'dshgh-root' },
+        h(Styles),
+        h('div', { className: 'dshgh-bar' },
+          h('span', { className: 'dshgh-title' }, t('panel.title')),
+          h('input', {
+            className: 'dshgh-input', style: { flex: '1', maxWidth: '300px' },
+            value: filter, spellCheck: false,
+            placeholder: t('repos.filter'),
+            'aria-label': t('repos.filter'),
+            onChange: (event) => setFilter(event.target.value),
+          }),
+          h('button', { type: 'button', className: 'dshgh-btn', disabled: busy, onClick: () => load() },
+            t('action.refresh'))),
+        h('div', { className: 'dshgh-body' },
+          error ? h('p', { className: 'dshgh-err' }, error) : null,
+          data?.remoteError
+            ? h('p', { className: 'dshgh-hint' }, t('repos.remoteError') + ': ' + data.remoteError)
+            : null,
+          busy && items.length === 0 ? h('p', { className: 'dshgh-mono' }, t('loading')) : null,
+          items.length === 0 && !busy
+            ? h('div', { className: 'dshgh-empty' },
+                h('p', null, t('repos.empty')),
+                h('p', null, t('repos.emptyHint')))
+            : null,
+          local.length > 0
+            ? h('div', { className: 'dshgh-group' },
+                h('h4', null, t('repos.sectionLocal') + ' · ' + local.length),
+                local.map((i) => row(i, 'local')))
+            : null,
+          remoteOnly.length > 0
+            ? h('div', { className: 'dshgh-group' },
+                h('h4', null, t('repos.sectionRemote') + ' · ' + remoteOnly.length),
+                remoteOnly.map((i) => row(i, 'remote')))
+            : null));
+    }
+
+    /**
+     * 仓库详情：状态 / 历史 / 分支 / 远端 / 改动。
+     *
+     * 它不再负责"选目录"——那是首页的职责。这里只接收一个已确定的 root，
+     * 以及一个返回按钮。
+     */
+    function RepoDetail(props) {
       const ctx = props.ctx;
       const store = props.store;
       const t = props.t;
       const state = useStore(store);
+      const onBack = props.onBack;
 
-      const [dir, setDir] = React.useState(state.dir);
+      const [dir, setDir] = React.useState(props.root ?? state.dir);
       const [tab, setTab] = React.useState('changes');
       const [busy, setBusy] = React.useState(false);
       const [error, setError] = React.useState('');
@@ -425,7 +605,15 @@ window.__ModuleLoader__.load({
 
       // 目录选择条始终在顶部：面板可能落在任意工作区。
       const bar = h('div', { className: 'dshgh-bar' },
-        h('span', { className: 'dshgh-title' }, t('panel.title')),
+        // 返回列表：详情页是从列表进来的，给一条明确的退路。
+        onBack
+          ? h('button', {
+              type: 'button', className: 'dshgh-btn dshgh-back',
+              'aria-label': t('action.back'), title: t('action.back'),
+              onClick: onBack,
+            }, '‹ ' + t('action.back'))
+          : null,
+        h('span', { className: 'dshgh-title' }, repo?.root ? repo.root.split('/').pop() : t('panel.title')),
         h('input', {
           className: 'dshgh-input',
           style: { flex: '1', maxWidth: '420px' },
@@ -796,6 +984,7 @@ window.__ModuleLoader__.load({
         // 目录留空表示「让 Host 用它自己的 cwd」，面板加载时由 Host 回填。
         const store = createStore({
           dir: '',
+          repos: null,
           overview: null,
           log: null,
           branches: null,
