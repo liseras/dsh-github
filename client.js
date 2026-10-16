@@ -178,7 +178,10 @@ window.__ModuleLoader__.load({
     // 这样插件页与旁边的「自定义背景」「Agent 预设」看起来是一套东西。
     const CSS = `
 .dshgh-root { display:flex; flex-direction:column; height:100%; min-height:0; color:var(--dsw-alias-label-primary); font-size:14px; }
-.dshgh-bar { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--dsw-alias-border-l1); flex:none; flex-wrap:wrap; }
+.dshgh-bar { display:flex; flex-direction:column; gap:8px; padding:10px 14px; border-bottom:1px solid var(--dsw-alias-border-l1); flex:none; }
+/* 顶栏的一行：标题行与路径行分开，避免在手机竖屏上互相挤压。 */
+.dshgh-bar-row { display:flex; align-items:center; gap:8px; min-width:0; }
+.dshgh-back { padding:6px 11px; font-size:16px; line-height:1; flex:none; }
 .dshgh-title { font-weight:600; }
 .dshgh-sub { color:var(--dsw-alias-label-secondary); font-size:12px; }
 .dshgh-spacer { flex:1; }
@@ -272,7 +275,7 @@ window.__ModuleLoader__.load({
                    -webkit-line-clamp:2; -webkit-box-orient:vertical; }
 .dshgh-repo-meta { display:flex; align-items:center; gap:10px; color:var(--dsw-alias-label-secondary);
                    font-size:11px; margin-top:2px; }
-.dshgh-back { padding:6px 10px; font-size:12px; }
+
 `;
 
     // ------------------------------------------------------------ 工具
@@ -548,10 +551,18 @@ window.__ModuleLoader__.load({
         }
       }, [dir, store]);
 
-      // 首次挂载时自动探测；只在还没有结果时执行。
+      // 首次挂载时探测**本次要打开的仓库**。
+      //
+      // 必须用 props.root，不能用 store.get().dir：store.dir 是上一次会话
+      // 遗留的值（可能是父目录）。用它会造成"输入框显示 A、实际探测 B"
+      // 的不一致——用户点了正确的项目，却看到"已探测：<父目录>"和
+      // "不是 git 仓库"。
       React.useEffect(() => {
-        if (store.get().overview === null) load(store.get().dir);
-      }, [load, store]);
+        const target = props.root ?? store.get().dir;
+        if (target) load(target);
+        // 只在挂载时执行一次；后续刷新由 load / run 负责。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
 
       // Host 回报探测过的目录后，回填到输入框——用户看到实际路径才好改。
       // 只在用户还没输入时回填，避免覆盖他正在敲的内容。
@@ -603,32 +614,39 @@ window.__ModuleLoader__.load({
         return text;
       };
 
-      // 目录选择条始终在顶部：面板可能落在任意工作区。
+      // 顶栏分两行：第一行是标题与动作，第二行是路径。
+      //
+      // 原来是单行放「返回 + 标题 + 路径框 + 加载 + 刷新」，在手机竖屏上
+      // 会被挤压到裁切（返回按钮只剩半个字）。路径是次要信息，下沉一行
+      // 既让标题行干净，也让路径框有足够宽度显示完整内容。
       const bar = h('div', { className: 'dshgh-bar' },
-        // 返回列表：详情页是从列表进来的，给一条明确的退路。
-        onBack
-          ? h('button', {
-              type: 'button', className: 'dshgh-btn dshgh-back',
-              'aria-label': t('action.back'), title: t('action.back'),
-              onClick: onBack,
-            }, '‹ ' + t('action.back'))
-          : null,
-        h('span', { className: 'dshgh-title' }, repo?.root ? repo.root.split('/').pop() : t('panel.title')),
-        h('input', {
-          className: 'dshgh-input',
-          style: { flex: '1', maxWidth: '420px' },
-          value: dir,
-          spellCheck: false,
-          'aria-label': t('field.dir'),
-          placeholder: t('field.dir'),
-          onChange: (event) => setDir(event.target.value),
-          onKeyDown: (event) => { if (event.key === 'Enter') load(); },
-        }),
-        h('button', { type: 'button', className: 'dshgh-btn', disabled: busy, onClick: () => load() }, t('action.load')),
-        h('span', { className: 'dshgh-spacer' }),
-        repo ? h('button', {
-          type: 'button', className: 'dshgh-btn', disabled: busy, onClick: () => load(),
-        }, t('action.refresh')) : null);
+        h('div', { className: 'dshgh-bar-row' },
+          // 返回用纯图标：中文「返回」两字在窄屏太占宽。
+          onBack
+            ? h('button', {
+                type: 'button', className: 'dshgh-btn dshgh-back',
+                'aria-label': t('action.back'), title: t('action.back'),
+                onClick: onBack,
+              }, '‹')
+            : null,
+          h('span', { className: 'dshgh-title' }, repo?.root ? repo.root.split('/').pop() : t('panel.title')),
+          h('span', { className: 'dshgh-spacer' }),
+          repo ? h('button', {
+            type: 'button', className: 'dshgh-btn', disabled: busy, onClick: () => load(),
+          }, t('action.refresh')) : null),
+        h('div', { className: 'dshgh-bar-row' },
+          h('input', {
+            className: 'dshgh-input',
+            style: { flex: '1', minWidth: '0' },
+            value: dir,
+            spellCheck: false,
+            'aria-label': t('field.dir'),
+            placeholder: t('field.dir'),
+            onChange: (event) => setDir(event.target.value),
+            onKeyDown: (event) => { if (event.key === 'Enter') load(); },
+          }),
+          h('button', { type: 'button', className: 'dshgh-btn', disabled: busy, onClick: () => load() },
+            t('action.load'))));
 
       if (repo === null) {
         // 空状态也要给出**可操作的信息**：
