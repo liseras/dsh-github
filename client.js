@@ -25,6 +25,7 @@ window.__ModuleLoader__.load({
       'panel.subtitle': '当前工作区的仓库',
       'empty.notRepo': '当前目录不是一个 git 仓库。',
       'empty.hint': '在下方填入仓库目录，或把会话的工作区切到一个 git 仓库。',
+      'empty.probed': '已探测：{dir}',
       'field.dir': '仓库目录',
       'action.load': '加载',
       'state.branch': '分支',
@@ -88,6 +89,7 @@ window.__ModuleLoader__.load({
       'panel.subtitle': 'Repository of the current workspace',
       'empty.notRepo': 'This directory is not a git repository.',
       'empty.hint': 'Enter a repository path below, or point the session workspace at one.',
+      'empty.probed': 'Probed: {dir}',
       'field.dir': 'Repository directory',
       'action.load': 'Load',
       'state.branch': 'Branch',
@@ -371,6 +373,13 @@ window.__ModuleLoader__.load({
         if (store.get().overview === null) load(store.get().dir);
       }, [load, store]);
 
+      // Host 回报探测过的目录后，回填到输入框——用户看到实际路径才好改。
+      // 只在用户还没输入时回填，避免覆盖他正在敲的内容。
+      React.useEffect(() => {
+        const probed = state.overview?.probed;
+        if (typeof probed === 'string' && probed !== '' && dir === '') setDir(probed);
+      }, [state.overview?.probed, dir]);
+
       /** 执行一条操作；写操作先弹确认。 */
       const run = React.useCallback(async (action, params, confirmText) => {
         if (confirmText) {
@@ -434,11 +443,18 @@ window.__ModuleLoader__.load({
         }, t('action.refresh')) : null);
 
       if (repo === null) {
+        // 空状态也要给出**可操作的信息**：
+        // 告诉用户我探测的是哪个目录，并让目录框预填它，改一下就能重试。
+        // 之前只显示两行字，用户看到一片空白也不知道该填什么。
+        const probed = overview?.probed ?? '';
         return h('div', { className: 'dshgh-root' },
           h(Styles),
           bar,
           h('div', { className: 'dshgh-empty' },
             h('p', null, t('empty.notRepo')),
+            probed
+              ? h('p', { className: 'dshgh-mono' }, t2('empty.probed', { dir: probed }))
+              : null,
             h('p', null, t('empty.hint')),
             error ? h('p', { className: 'dshgh-err' }, error) : null));
       }
