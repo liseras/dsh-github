@@ -559,10 +559,30 @@ window.__ModuleLoader__.load({
       // "不是 git 仓库"。
       React.useEffect(() => {
         const target = props.root ?? store.get().dir;
+        // 换仓库时必须清掉上一个仓库的派生数据。
+        //
+        // overview / log / branches 都存在共享 store 里，而 tab 的加载
+        // 判断是「缓存为空才拉」（`!store.get().log`）。不清的话，从
+        // 仓库 A 切到仓库 B 时缓存非空 → 跳过请求 → B 显示 A 的历史。
+        // 症状就是"所有项目都是同一份提交历史"。
+        store.set({ log: null, branches: null, diff: null, overview: null });
         if (target) load(target);
         // 只在挂载时执行一次；后续刷新由 load / run 负责。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, []);
+      }, [props.root]);
+
+      // 路径框跟着当前仓库走。
+      //
+      // dir 是 useState 的初值，只在首次挂载时生效；如果 React 复用了这个
+      // 组件实例（同一个位置换了 root），dir 会停留在旧仓库的路径上。
+      // 这里显式同步一次，保证"标题、路径框、实际数据"三者一致。
+      React.useEffect(() => {
+        if (typeof props.root === 'string' && props.root !== '' && props.root !== dir) {
+          setDir(props.root);
+        }
+        // dir 变化时重跑是必要的：它正是要被纠正的那个值。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [props.root]);
 
       // Host 回报探测过的目录后，回填到输入框——用户看到实际路径才好改。
       // 只在用户还没输入时回填，避免覆盖他正在敲的内容。
@@ -661,20 +681,24 @@ window.__ModuleLoader__.load({
         let cancelled = false;
         (async () => {
           try {
-            if (tab === 'history' && !store.get().log) {
+            // 缓存必须与仓库绑定：只判断"有没有值"会在切换仓库时命中
+            // 上一个仓库的数据。历史与分支都带上 root 一起存。
+            const cached = store.get().log;
+            if (tab === 'history' && cached?.root !== repo.root) {
               const log = await call('/run', { method: 'POST', body: { root: repo.root, action: 'log', params: { limit: 40 } } });
-              if (!cancelled) store.set({ log });
+              if (!cancelled) store.set({ log: { root: repo.root, commits: log.commits } });
             }
-            if (tab === 'branches' && !store.get().branches) {
+            const cachedBranches = store.get().branches;
+            if (tab === 'branches' && cachedBranches?.root !== repo.root) {
               const branches = await call('/run', { method: 'POST', body: { root: repo.root, action: 'branches', params: {} } });
-              if (!cancelled) store.set({ branches });
+              if (!cancelled) store.set({ branches: { root: repo.root, branches: branches.branches } });
             }
           } catch (err) {
             if (!cancelled) setError(err.message);
           }
         })();
         return () => { cancelled = true; };
-      }, [tab, repo, store]);
+      }, [tab, repo?.root, store]);
 
       if (repo === null) {
         // 空状态也要给出**可操作的信息**：
