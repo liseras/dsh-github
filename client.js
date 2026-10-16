@@ -648,6 +648,34 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', className: 'dshgh-btn', disabled: busy, onClick: () => load() },
             t('action.load'))));
 
+      // 切换 tab 时按需加载该 tab 的数据。
+      //
+      // 这个 effect 必须放在 `if (repo === null)` 的提前 return **之前**。
+      // 放在后面会导致两次渲染的 hook 数量不同：
+      //   首次渲染 overview 为 null → 提前 return，跳过本 effect；
+      //   数据到达后重渲染 → repo 不为 null，执行到本 effect；
+      // React 检测到 hook 数量变化即抛
+      // "Rendered more hooks than during the previous render"，组件崩成空白。
+      React.useEffect(() => {
+        if (repo === null) return undefined;
+        let cancelled = false;
+        (async () => {
+          try {
+            if (tab === 'history' && !store.get().log) {
+              const log = await call('/run', { method: 'POST', body: { root: repo.root, action: 'log', params: { limit: 40 } } });
+              if (!cancelled) store.set({ log });
+            }
+            if (tab === 'branches' && !store.get().branches) {
+              const branches = await call('/run', { method: 'POST', body: { root: repo.root, action: 'branches', params: {} } });
+              if (!cancelled) store.set({ branches });
+            }
+          } catch (err) {
+            if (!cancelled) setError(err.message);
+          }
+        })();
+        return () => { cancelled = true; };
+      }, [tab, repo, store]);
+
       if (repo === null) {
         // 空状态也要给出**可操作的信息**：
         // 告诉用户我探测的是哪个目录，并让目录框预填它，改一下就能重试。
@@ -739,26 +767,6 @@ window.__ModuleLoader__.load({
             h('span', { className: 'dshgh-path', title: remote.fetchUrl ?? '' }, remote.fetchUrl ?? '')));
       }
 
-      // 切换 tab 时按需加载该 tab 的数据。
-      React.useEffect(() => {
-        if (repo === null) return;
-        let cancelled = false;
-        (async () => {
-          try {
-            if (tab === 'history' && !store.get().log) {
-              const log = await call('/run', { method: 'POST', body: { root: repo.root, action: 'log', params: { limit: 40 } } });
-              if (!cancelled) store.set({ log });
-            }
-            if (tab === 'branches' && !store.get().branches) {
-              const branches = await call('/run', { method: 'POST', body: { root: repo.root, action: 'branches', params: {} } });
-              if (!cancelled) store.set({ branches });
-            }
-          } catch (err) {
-            if (!cancelled) setError(err.message);
-          }
-        })();
-        return () => { cancelled = true; };
-      }, [tab, repo, store]);
 
       const commitRow = h('div', { className: 'dshgh-commit' },
         h('input', {
